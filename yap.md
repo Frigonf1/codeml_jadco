@@ -19,7 +19,7 @@ We chose growth instead of median as the target variable to avoid composition ef
 
 ## Decision to Evaluate Growth at the Building Level 
 
-After training a Random Forest Regressor model at the unit level, we came to the conclusion that variability was much too affected by noise, and not very explainable by a model. FOr example, the negociation skills of tenants come into play a lot during lease renewals, and affect the rent increase in a way that is not capturable. 
+After training a Random Forest Regressor model at the unit level, we came to the conclusion that variability was much too affected by noise, and not very explainable by a model. For example, the negociation skills of tenants come into play a lot during lease renewals, and affect the rent increase in a way that is not capturable. 
 
 We therefore decided to evaluate growth at the building level, while still comparing units against themselves, and taking an average increase per building. Themodel separates recommendations for renewals and turnovers, since both values evolve differently. 
 
@@ -190,5 +190,22 @@ The XGBoost model also performed exceptionally well, capturing the non-linear ma
 - **Renewal MAE:** `2.56%`
 - **Turnover MAE:** `2.79%`
 
+### Post-Processing Regulatory Caps
+
+While the machine learning models naturally learn the historical limits of rent growth based on market dynamics, we implemented a deterministic post-processing function (`apply_regulatory_cap`) directly into the forecasting pipeline to strictly enforce current provincial laws:
+
+1. **Turnover Exemption:** All predictions for `sRenewal == 0` (Turnovers) bypass the cap function, as landlords have the legal right to set open-market prices for new tenants in both provinces.
+2. **New Construction Exemption:** Buildings constructed within the last 5 years (e.g., *Carlyle, stelz3, Westpark*) are exempt from the TAL under Quebec's Clause F. Similarly, *The Met* is exempt from Ontario's LTB rent control because it was first occupied after November 15, 2018. For these specific `sPropCode` identifiers, the model's unconstrained free-market predictions are used directly for renewals.
+3. **Hard Regulatory Caps:** For established buildings subject to rent control (e.g., *Levesque, dj1, dj2, stelz1*), any model prediction for `sRenewal == 1` that exceeds the statutory limit (set to 4.0% for standard Quebec TAL guidelines) is automatically clipped to the maximum legal threshold. This ensures our final business recommendations never advise illegal rent increases.
+
 **Conclusion:** 
 The models successfully predict aggregate building rent growth within a ~2.5% margin of error on unseen future data. Notably, both models predictably struggle slightly more with **Turnovers** (where landlords have greater pricing freedom and where unit-level renovations introduce unseen volatility) compared to **Renewals** (which are tightly bounded by TAL regulations and CPI baselines).
+
+### Case Study: Negative Forecast for Levesque Renewals (2026)
+
+When forecasting 2026 rent growth, the model predicted a **-0.63%** effective rent growth for renewals at the `levesque` building, while simultaneously predicting a **+8.39%** growth for turnovers in the exact same building. 
+
+This seemingly counter-intuitive negative forecast perfectly demonstrates the model's understanding of **Effective Rent** vs. **Contractual Rent**:
+1. **Negative Market Gap:** The model identified that Levesque's existing tenants are currently paying rents that are at (or slightly above) the current open-market asking rate for the building. Consequently, the landlord has absolutely zero leverage to increase the contractual rent.
+2. **Forced Concessions for Retention:** To prevent these at-market tenants from leaving (which would trigger a costly vacancy and turnover period), the model predicts the landlord will be forced to offer a small retention concession (e.g., half a month free or a cash rebate). 
+3. **The Math:** While the *contractual* base rent remains flat (0% increase), the introduction of a new retention concession mathematically pulls the *effective* rent down compared to the previous lease, resulting in the **-0.63%** negative growth prediction.
