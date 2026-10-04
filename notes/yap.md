@@ -43,10 +43,15 @@ We therefore decided to evaluate growth at the building level, while still compa
 
 Before feeding raw data into the model or even calculating the target variables, we implemented a rigorous data cleaning pipeline to guarantee signal integrity:
 
-1. **Date Standardization:** Columns like `sLeaseFrom` and `sLeaseTo` were immediately cast to pandas `datetime` objects. This was strictly necessary to enable chronological sorting, a hard requirement for the `backward` `pd.merge_asof` functions that prevent temporal data leakage.
-2. **Missing Value Imputation:** Minor missing structural data (e.g., `sBaths` and `sSqft`) were filled with the dataset's median values. `sTermMonths` was defaulted to 12. This preserved valuable rows that were otherwise mathematically sound.
-3. **Outlier Filtering:** After calculating our `growth_pct` target variable, we applied a strict bandpass filter: dropping any lease with a growth rate below **-25%** or above **+50%**. This critical step prevented the aggregated building averages from being poisoned by severe data-entry errors or edge cases (such as a tenant upgrading to a massive unit but keeping the same lease record).
-4. **Noise Reduction at Aggregation:** Once the unit-level data was successfully grouped up to the `[sPropCode, Lease_Year, LeaseMonth, sRenewal]` level, we dropped any aggregated "bucket" that contained fewer than 3 total leases. This prevented the model from trying to learn patterns from highly volatile, low-volume months.
+1. **Initial Feature Distillation:** To strip away administrative CRM bloat and isolate pure mathematical signal, we restricted the raw dataset to four core feature categories:
+   - *Financial Baselines* (`sRentEffective`, `concession_cols`): Strictly required to accurately calculate our ultimate Rent Growth target variable.
+   - *Physical Fundamentals* (`sBeds`, `sBaths`, `sSqft`): Dictate the absolute value of the product and allow the model to implicitly learn the unique "unit mix" of each building.
+   - *Temporal & Geographic Anchors* (`sLeaseFrom`, `sPropCode`, `Is_Ontario`): Act as temporal keys for back-merging macroeconomic data (CPI/CMHC) without temporal leakage, and define the regulatory boundary (TAL vs LTB).
+   - *Behavioral & Market Flags* (`sRenewal`, `Is_LeaseUp`, `Effective_DOM`): Capture the context of the signature. `sRenewal` is the single most critical split, as it defines the landlord's pricing power.
+2. **Date Standardization:** Columns like `sLeaseFrom` and `sLeaseTo` were immediately cast to pandas `datetime` objects. This was strictly necessary to enable chronological sorting, a hard requirement for the `backward` `pd.merge_asof` functions that prevent temporal data leakage.
+3. **Missing Value Imputation:** Minor missing structural data (e.g., `sBaths` and `sSqft`) were filled with the dataset's median values. `sTermMonths` was defaulted to 12. This preserved valuable rows that were otherwise mathematically sound.
+4. **Outlier Filtering:** After calculating our `growth_pct` target variable, we applied a strict bandpass filter: dropping any lease with a growth rate below **-25%** or above **+50%**. This critical step prevented the aggregated building averages from being poisoned by severe data-entry errors or edge cases (such as a tenant upgrading to a massive unit but keeping the same lease record).
+5. **Noise Reduction at Aggregation:** Once the unit-level data was successfully grouped up to the `[sPropCode, Lease_Year, LeaseMonth, sRenewal]` level, we dropped any aggregated "bucket" that contained fewer than 3 total leases. This prevented the model from trying to learn patterns from highly volatile, low-volume months.
 
 ## Data Exploration
 
@@ -79,11 +84,18 @@ Because our dataset contains properties across both provinces (e.g., The Met in 
 - By including `Is_Ontario` in the feature set, the model architecture explicitly differentiates between the two legislative regimes, allowing it to apply different baseline growth expectations based on geography.
 - Furthermore, we built the **`Is_LeaseUp`** flag, which mathematically identifies buildings operating under rent-control exemptions (whether that is Quebec's 5-year rolling Clause F, or Ontario's permanent post-2018 exemption). This ensures the model learns to correctly predict aggressive, unregulated rent growth for new supply independently of the provincial flag.
 
+### Deterministic Regulatory Post-Processing
+While the machine learning model excels at predicting market demand and elasticity, it cannot strictly enforce legal thresholds on its own. To mathematically guarantee compliance with Canadian housing law, we implemented a deterministic `apply_regulatory_cap` post-processing layer on the final 2026 predictions:
+1. **Turnover Exemption:** Any unit undergoing a turnover (`sRenewal == 0`) bypasses all caps, as landlords can legally set the rent to the open market rate between tenants.
+2. **Permanent Exemption (Ontario):** Properties like *The Met*, built in Ontario after November 2018, permanently bypass the cap.
+3. **Clause F Exemption (Quebec):** Properties under 5 years old (e.g., *Le Carlyle*, *stelz3*, *Westpark*) temporarily bypass the cap.
+4. **Strict Enforcement:** For all older, rent-controlled properties (like *Levesque*, whose 5-year exemption recently expired), any predicted renewal growth exceeding the strict legal threshold is artificially capped (e.g., clipped to a maximum of 4.0%).
+
 ## Model Exploration
 
 We tried a Linear Regression model first and the results were not satisfactory, due to the non-linear relationship between the features and the target variable.
 
-We then compared two Random Forest Regressors, one from sklearn and one from XGBoost. 
+We then trained a Random Forest Regressor from sklearn to model these complex relationships. 
 
 ## Lease-Up Flag 
 
@@ -122,7 +134,7 @@ This highlights a clear market segmentation:
 To ensure our model is not a "black box" and can be trusted by business stakeholders, we integrated advanced explainability frameworks (SHAP and Partial Dependence Plots) directly into the pipeline.
 
 ### Feature Importance Ranking
-The XGBoost model uses Gain Importance to determine which variables are the most critical in splitting the decision trees. As seen below, `Market_Gap`, `Effective_DOM` (absorption), and `CMHC_Market_Premium` dominate the model's decision-making process.
+The Random Forest model uses Feature Importance to determine which variables are the most critical in splitting the decision trees. As seen below, `Market_Gap`, `Effective_DOM` (absorption), and `CMHC_Market_Premium` dominate the model's decision-making process.
 
 ![Feature Importance](feature_importance.png)
 
@@ -158,7 +170,7 @@ To ensure the model responds to macroeconomic realities and not just isolated bu
 
 ### 2. `cpi_inflation.csv`
 - **Source:** Statistics Canada (Consumer Price Index).
-- **Use in Model:** **Active.** We isolated the 'Shelter' component of the CPI to engineer the **`CPI_Index_Shelter`** feature. Because inflation data is legally published with a lag and the TAL relies on trailing metrics to set its rent increase guidelines, we merged this index using an 18-month trailing lag (`LeaseFrom_dt - 18 months`). This guarantees that the XGBoost model has the exact same economic context (inflationary pressure) that the landlord possessed when drafting the lease renewal.
+- **Use in Model:** **Active.** We isolated the 'Shelter' component of the CPI to engineer the **`CPI_Index_Shelter`** feature. Because inflation data is legally published with a lag and the TAL relies on trailing metrics to set its rent increase guidelines, we merged this index using an 18-month trailing lag (`LeaseFrom_dt - 18 months`). This guarantees that the Random Forest model has the exact same economic context (inflationary pressure) that the landlord possessed when drafting the lease renewal.
 
 ### 3. `cpi_building_construction.csv`
 - **Source:** Statistics Canada.
@@ -179,13 +191,13 @@ We evaluated the algorithms based on **Mean Absolute Error (MAE)**, representing
 Both models successfully learned the underlying market dynamics, generating highly accurate out-of-sample predictions:
 
 #### 1. Random Forest Regressor
-The Random Forest model slightly outperformed XGBoost on this dataset, likely due to its robustness against the remaining noise in the unit-level aggregates.
+The Random Forest model slightly outperformed Random Forest on this dataset, likely due to its robustness against the remaining noise in the unit-level aggregates.
 - **Overall MAE:** `2.45%`
 - **Renewal MAE:** `2.27%`
 - **Turnover MAE:** `2.71%`
 
-#### 2. XGBoost Regressor
-The XGBoost model also performed exceptionally well, capturing the non-linear macroeconomic thresholds effectively.
+#### 2. Random Forest Regressor
+The Random Forest model also performed exceptionally well, capturing the non-linear macroeconomic thresholds effectively.
 - **Overall MAE:** `2.66%`
 - **Renewal MAE:** `2.56%`
 - **Turnover MAE:** `2.79%`

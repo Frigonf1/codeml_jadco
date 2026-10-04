@@ -1,3 +1,4 @@
 \code_ml_env
 *.venv
 \data
+\exploration
