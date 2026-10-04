@@ -1,84 +1,72 @@
-# JADCO - Collection Équinoxe : Clés en main
+# Equinoxe 2026 : Precision Rent Forecasting Engine
 
-## 1. Challenge Overview
-Estimate Collection Équinoxe's **2026 rent increase** using historical data across six buildings in Québec and Ontario. 
-* Clearly **define the rent increase** you are measuring.
-* **Justify your modeling methodology and analytical choices.**
-* Reasoning and sound methodology matter more to the jury than proximity to a single arbitrary number.
+**Team:** JFF Podcast team
+
+A predictive machine learning engine that cuts through real estate noise to forecast Jadco's true 2026 cash-flow using constant-unit effective rent analysis.
 
 ---
 
-## 2. Objectives & Scope
-* **Yardi Data Mastery:** Understand the 4 source tables and standard Yardi `h`/`s` fields.
-* **Portfolio Composition:** Identify and explain portfolio composition effects.
-* **Unit & Lease Matching:** Match consecutive leases using `sPropCode` + `sUnitCode` (or `hUnit`). *Do not use `sSite` + `sUnitCode`.*
-* **Concessions & Net Effective Rent:** Account for tenant concessions by analyzing `sRent` vs. `sRentEffective`.
-* **Turnovers vs. Renewals:** Accurately segment lease renewals from turnovers using `sRenewal`.
-* **Jurisdictional Context:** Distinguish and account for differing rental regulations in **Québec** vs. **Ontario**.
-* **External Data Integration:** Incorporate external macroeconomic / public data sources (e.g., inflation, CPI, market rent benchmarks, TAL/LTB guidelines).
-* **Implementation:** Implement and complete the required functions:
-  * `estimate_2026()`
-  * `backtest()`
-* **Validation:** Validate and backtest your method against historical performance for 2023, 2024, and 2025.
-* **Limitations:** Note that this extract *cannot* be used to calculate portfolio occupancy, vacancy, or absorption.
+## Project Overview
 
----
+Real estate portfolio management is often driven by intuition or flawed macroscopic metrics. When analyzing Jadco’s Equinoxe dataset, we quickly realized that looking at median rental prices created a dangerous illusion. The influx of new luxury buildings masked the true economic performance of existing units, and the heavy use of concessions (free months) created a disconnect between contractual rent and actual cash flow. 
 
-## 3. Dataset Description
-The challenge dataset consists of four raw CSV files (plus starter files):
+Our solution is an end-to-end predictive engine that forecasts the 2026 rent growth for Jadco’s portfolio. Instead of predicting generic market trends, it zeroes in on the true financial reality: the Effective Rent Growth on a Constant-Unit Basis (CAGR). It predicts exactly how much more money a specific unit will yield in the coming year, taking into account the building's lifecycle, the tenant's status (renewal vs. turnover), and the broader Canadian macroeconomic climate.
 
-| File Name | Dimensions | Description |
-| :--- | :--- | :--- |
-| `equinoxe_listings.csv` | 1,061 units, 29 cols | Property and unit-level listings |
-| `equinoxe_lease_history.csv` | 4,302 leases, 35 cols | Lease terms, start/end dates, renewal status |
-| `equinoxe_concessions.csv` | 3,560 rows, 18 cols | Concession amounts, types, and schedules |
-| `equinoxe_asking_history.csv` | 3,857 rows, 14 cols | Historical asking rents over time |
-| `starter.ipynb` | Jupyter Notebook | Starter notebook containing base function signatures |
+## Methodology
 
-> **Data Horizons & Caveat:** Signature dates, lease starts, and asking-rent histories extend through December 2025. While certain contractual lease-end and concession dates run past 2025, **they do not serve as an answer key** for the 2026 rent increase.
+1. **Financial Auditing:** We crossed historical leases with raw `PromoPay` data to calculate the exact amortized *Effective Rent*, ensuring we train our model on true cash-flow, not display prices.
+2. **Feature Engineering:** We created specialized variables such as `Is_LeaseUp` (to identify volatile new buildings)..
+3. **Macroeconomic Integration:** We merged local CMHC Vacancy Rates (capturing supply/demand) and Statistics Canada Shelter CPI (with an 18-month lag to simulate TAL regulatory inertia).
+4. **Machine Learning:** We fed these complex, non-linear interactions into a Random Forest Regressor, validated through a strict chronological Walk-Forward Backtesting methodology to prevent any temporal data leakage. We also utilize SHAP values to provide explainability to our predictions.
 
----
+## How to Run the Project
 
-## 4. Evaluation Rubric (100 Points Total)
+### Prerequisites
+Make sure you have Python installed. The project relies on the following major libraries:
+- `pandas`
+- `scikit-learn`
+- `shap`
+- `matplotlib`
+- `seaborn`
+- `jupyter`
 
-A jury evaluates your Jupyter notebook and presentation based on the following breakdown:
+### Installation
 
-| Criteria | Points | Focus Areas |
-| :--- | :---: | :--- |
-| **Definition of the rent increase** | **10 pts** | Clear, rigorous mathematical & operational definition of the target metric. |
-| **Data analysis & composition effects**| **15 pts** | Handling portfolio mix shifts, unit-type variations, and property nuances. |
-| **Same-unit lease matching** | **15 pts** | Correct matching logic via `sPropCode` + `sUnitCode` (or `hUnit`). |
-| **Concessions** | **10 pts** | Proper adjustment between face rent (`sRent`) and effective rent (`sRentEffective`). |
-| **Renewals and turnovers** | **10 pts** | Accurate segmentation using `sRenewal` and handling turnover spreads. |
-| **External data** | **15 pts** | Integration of public benchmarks, market indices, or provincial regulatory rules. |
-| **Forecast and backtest** | **15 pts** | Working `estimate_2026()` and `backtest()` across 2023–2025 with defensible error metrics. |
-| **Notebook quality** | **10 pts** | Code readability, structure, markdown documentation, reproducibility, and hygiene. |
+1. **Clone the repository:**
+   ```bash
+   git clone <repository_url>
+   cd codeml_jadco
+   ```
 
----
+2. **Set up a virtual environment (Recommended):**
+   ```bash
+   python -m venv .venv
+   
+   # Windows
+   .\.venv\Scripts\activate
+   
+   # Mac/Linux
+   source .venv/bin/activate
+   ```
 
-## 5. Submission & Rules
+3. **Install Dependencies:**
+   Install the required packages using pip:
+   ```bash
+   pip install pandas scikit-learn shap matplotlib seaborn jupyter
+   ```
 
-### Non-Negotiable Rules & Data Privacy
-1. **Confidentiality (CRITICAL):**
-   * **Do NOT upload raw CRM data or CSVs to public repositories (GitHub, Kaggle, etc.).**
-   * Keep `.gitignore` updated so data files and raw outputs are never tracked.
-   * Strip raw CRM data and identifying tenant details from outputs/visualizations in submitted deliverables.
-2. **Immutable Source Data:**
-   * Keep source CSV files untouched and unmodified.
-   * All data transformations, joins, and feature engineering must occur programmatically inside the notebook.
-3. **Tooling & Environment:**
-   * Python and Jupyter Notebook using the provided `starter.ipynb`.
-   * Explain transformations and modeling rationale in dedicated Markdown cells.
-   * Cite all public data sources, external articles, and AI tools used.
+### Execution
 
-### Submission Deliverables (Devpost)
-* **Jupyter Notebook (`.ipynb`):**
-  * Fully executable with `estimate_2026()` and `backtest()` completed.
-  * Clear Markdown documentation of methodology, assumptions, and findings.
-  * Clear execution instructions, library versions, and citations/references.
-* **Final Estimate:** Final 2026 estimate expressed as a **percentage**, accompanied by its exact metric definition.
-* **Trained Model:** Serialized model artifacts if applicable.
-* **Presentation:** Jury presentation materials.
-* **Devpost Details:**
-  * Submit under the exact **team name** registered on HxBuddy.
-  * Select **exactly one prize** corresponding to this challenge.
+1. Place the required Jadco CSV data files (`equinoxe_listings.csv`, `equinoxe_lease_history.csv`, `equinoxe_concessions.csv`, `equinoxe_asking_history.csv`) into the `data/` folder.
+2. Launch Jupyter Notebook:
+   ```bash
+   jupyter notebook
+   ```
+3. Open `final_submission.ipynb`.
+4. Run the notebook from top to bottom (`Cell > Run All`). The final cells will output the `backtest()` validation results and the final `estimate_2026()` predictions for the Jadco portfolio.
+
+## Repository Structure
+
+- `final_submission.ipynb`: The main executable notebook containing all data exploration, feature engineering, and the final Random Forest model.
+- `data/`: Folder intended to house the raw CSV files (excluded via `.gitignore` for confidentiality).
+
